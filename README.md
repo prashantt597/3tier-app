@@ -10,3 +10,5 @@ A production-ready FastAPI application with authentication, deployed to AWS EKS 
    python -m venv venv
    source venv/bin/activate  # On Windows: .\venv\Scripts\activate
    pip install -r requirements.txt
+
+   end
