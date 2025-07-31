@@ -46,6 +46,22 @@ provider "kubernetes" {
   }
 }
 
+# Data source for EKS-optimized AMI
+data "aws_ami" "eks_optimized" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amazon-eks-node-1.27-*"]
+  }
+
+  filter {
+    name   = "architecture"
+    values = ["x86_64"]
+  }
+}
+
 # VPC module for creating network resources
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
@@ -87,6 +103,7 @@ module "eks" {
       desired_size   = 2
       instance_types = ["t3.medium"]
       disk_size      = 20
+      ami_id         = data.aws_ami.eks_optimized.id  # Use EKS-optimized AMI
     }
   }
 
