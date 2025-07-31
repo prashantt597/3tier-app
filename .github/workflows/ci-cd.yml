@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # Added for manual triggering
+  workflow_dispatch:  # For manual triggering
 jobs:
   debug:
     runs-on: ubuntu-latest
@@ -87,6 +87,11 @@ jobs:
           severity: 'CRITICAL,HIGH'
           skip-version-check: true
 
+      - name: Debug SonarCloud configuration
+        run: |
+          echo "SONAR_HOST_URL: https://sonarcloud.io"
+          echo "SONAR_TOKEN is set: ${{ secrets.SONAR_TOKEN != '' }}"
+
       - name: SonarCloud Scan
         uses: sonarsource/sonarqube-scan-action@master
         env:
@@ -97,9 +102,6 @@ jobs:
           args: >
             -X  # Enable debug logging
         continue-on-error: true  # Temporary for debugging, set to false for production
-        run: |
-          echo "SONAR_HOST_URL: https://sonarcloud.io"
-          sonar-scanner -Dsonar.projectBaseDir=client -Dsonar.host.url=https://sonarcloud.io -Dsonar.login=${{ secrets.SONAR_TOKEN }} -X || true
 
       - name: Verify Docker image health
         run: |
