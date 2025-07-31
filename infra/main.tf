@@ -44,31 +44,6 @@ module "eks" {
   }
 }
 
-module "iam_github_oidc" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-github-oidc"
-  version = "5.30.0"
-
-  github_repositories = ["https://github.com/prashantt597/git_aws.git"] # Replace with your repo
-  attach_admin_policy = false
-  attach_read_only_policy = false
-  custom_policy_json = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "eks:DescribeCluster",
-          "eks:AccessKubernetesApi",
-          "ec2:Describe*",
-          "iam:Get*",
-          "iam:List*"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
 resource "aws_lb" "app_alb" {
   name               = "three-tier-alb"
   internal           = false

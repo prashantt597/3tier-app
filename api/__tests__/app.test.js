@@ -8,7 +8,7 @@ chai.use(chaiHttp);
 describe('API Endpoints', () => {
   it('should return 200 on health check', (done) => {
     chai.request(app)
-      .get('/health') // Adjust endpoint if different
+      .get('/api/health') // Adjusted based on typical auth routes
       .end((err, res) => {
         expect(res).to.have.status(200);
         done();

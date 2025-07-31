@@ -1,13 +1,25 @@
 frontend:
-  image: your-org/3tier-app-frontend:latest
+  image: prashantt597/3tier-app-frontend:latest
   replicas: 2
   port: 80
 
 backend:
-  image: your-org/3tier-app-backend:latest
+  image: prashantt597/3tier-app-backend:latest
   replicas: 2
-  port: 3000
+  port: 5000 # Matches api/Dockerfile
+
+mysql:
+  enabled: true
+  auth:
+    rootPassword: "" # Set via secret
+    database: "" # Set via secret
+    username: "" # Set via secret
+    password: "" # Set via secret
+  primary:
+    persistence:
+      storageClass: standard
+      size: 1Gi
 
 ingress:
   enabled: true
-  hostname: "" # Set your domain or leave empty for ALB DNS
+  hostname: "" # Set your domain or leave empty

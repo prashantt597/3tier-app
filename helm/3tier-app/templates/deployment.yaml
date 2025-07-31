@@ -47,6 +47,15 @@ spec:
         image: {{ .Values.backend.image }}
         ports:
         - containerPort: {{ .Values.backend.port }}
+        env:
+        - name: DB_HOST
+          value: {{ .Release.Name }}-mysql
+        - name: DB_NAME
+          value: {{ .Values.mysql.auth.database }}
+        - name: DB_USER
+          value: {{ .Values.mysql.auth.username }}
+        - name: DB_PASSWORD
+          value: {{ .Values.mysql.auth.password }}
         resources:
           requests:
             cpu: "100m"
