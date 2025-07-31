@@ -1,32 +1,12 @@
-# 3-Tier DevSecOps Project
+# DevOps Shack
 
-This repository contains a simple Node.js API and a React client used for a user management demo. Follow the steps below to get the project running locally.
+A production-ready FastAPI application with authentication, deployed to AWS EKS via GitHub Actions.
 
 ## Setup
 
-1. Install Node.js (version 18 or later is recommended).
-2. Install dependencies for both the API and client:
-
-   ```bash
-   cd api && npm install
-   cd ../client && npm install
-   ```
-
-3. Start the API server:
-
-   ```bash
-   cd api
-   npm start
-   ```
-
-4. In a separate terminal, start the React client:
-
+1. **Install dependencies**:
    ```bash
    cd client
-   npm start
-   ```
-
-5. Open `http://localhost:3000` in your browser to use the application.
-
-The client now displays an animated banner welcoming you to **DevOps Shack**.
-end
+   python -m venv venv
+   source venv/bin/activate  # On Windows: .\venv\Scripts\activate
+   pip install -r requirements.txt

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto glass p-8 rounded-2xl shadow-lg mt-20" role="main">
+    <h2 class="text-3xl font-extrabold mb-4 text-center text-white">Welcome, {{ username }}!</h2>
+    <p class="text-center text-gray-200">You have successfully logged in to DevOps Shack.</p>
+    <a href="/auth" class="block mt-4 text-center text-blue-300 hover:underline" aria-label="Logout and return to login page">Logout</a>
+</div>
+{% endblock %}
