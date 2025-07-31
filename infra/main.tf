@@ -138,12 +138,6 @@ module "eks" {
   }
 }
 
-# Output cluster endpoint for debugging
-output "cluster_endpoint" {
-  description = "EKS cluster endpoint"
-  value       = module.eks.cluster_endpoint
-}
-
 # Variables for configurable settings
 variable "vpc_cidr" {
   description = "CIDR block for the VPC"
