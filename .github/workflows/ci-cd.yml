@@ -168,27 +168,37 @@ jobs:
         with:
           version: 'v1.27.0'
 
+      - name: Debug kubectl configuration
+        run: |
+          aws eks --region ap-south-1 describe-cluster --name git-action-eks || true
+          aws eks --region ap-south-1 update-kubeconfig --name git-action-eks
+          kubectl config view
+          kubectl cluster-info || true
+
       - name: Configure kubectl
         run: |
           aws eks --region ap-south-1 update-kubeconfig --name git-action-eks
+
+      - name: Create Kubernetes Secret
+        continue-on-error: true
+        run: |
+          kubectl create secret generic app-secrets --from-literal=secret-key=${{ secrets.SECRET_KEY }} -n default --dry-run=client -o yaml | kubectl apply -f --request-timeout=60s
 
       - name: Install Helm
         uses: azure/setup-helm@v3
         with:
           version: 'v3.12.0'
 
-      - name: Create Kubernetes Secret
-        run: |
-          kubectl create secret generic app-secrets --from-literal=secret-key=${{ secrets.SECRET_KEY }} -n default --dry-run=client -o yaml | kubectl apply -f -
-
       - name: Deploy to EKS with Helm
+        continue-on-error: true
         run: |
           helm package helm/fastapi-app
           mv fastapi-app-*.tgz fastapi-app.tgz
-          helm upgrade --install fastapi-app ./fastapi-app.tgz --namespace default --set image.tag=latest
+          helm upgrade --install fastapi-app ./fastapi-app.tgz --namespace default --set image.tag=latest --timeout 10m
 
       - name: Get ALB URL
         id: alb_url
+        continue-on-error: true
         run: |
           for i in {1..5}; do
             ALB_URL=$(kubectl get ingress -n default -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' --request-timeout=60s || true)

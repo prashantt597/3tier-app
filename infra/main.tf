@@ -96,6 +96,10 @@ module "eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
+  # Enable public endpoint for GitHub Actions access
+  cluster_endpoint_public_access  = true
+  cluster_endpoint_private_access = false
+
   eks_managed_node_groups = {
     default = {
       min_size       = 1
@@ -103,7 +107,7 @@ module "eks" {
       desired_size   = 2
       instance_types = ["t3.medium"]
       disk_size      = 20
-      ami_id         = data.aws_ami.eks_optimized.id  # Use EKS-optimized AMI
+      ami_id         = data.aws_ami.eks_optimized.id
     }
   }
 
@@ -132,6 +136,12 @@ module "eks" {
     Project     = "3tier-app"
     ManagedBy   = "Terraform"
   }
+}
+
+# Output cluster endpoint for debugging
+output "cluster_endpoint" {
+  description = "EKS cluster endpoint"
+  value       = module.eks.cluster_endpoint
 }
 
 # Variables for configurable settings
