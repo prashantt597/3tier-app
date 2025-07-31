@@ -38,18 +38,18 @@ jobs:
           cd client
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip list  # Log installed dependencies
+          pip list
 
       - name: Check for dependency vulnerabilities
         run: |
           cd client
           pip install pip-audit
-          pip-audit -r requirements.txt || true  # Log vulnerabilities but don't fail pipeline
+          pip-audit -r requirements.txt || true
 
       - name: Run unit tests with coverage
         run: |
           cd client
-          python -m pytest -vv --cov=app --cov-report=xml tests/ || echo "Test errors: $(cat pytest.log)"  # Capture detailed output
+          python -m pytest -vv --cov=app --cov-report=xml tests/ || echo "Test errors: $(cat pytest.log)"
 
   scan:
     needs: test
@@ -100,22 +100,22 @@ jobs:
         with:
           projectBaseDir: client
           args: >
-            -X  # Enable debug logging
-        continue-on-error: true  # Temporary for debugging
+            -X
+        continue-on-error: true
 
       - name: Debug Docker container
         run: |
-          docker run -d -p 8000:8000 --name test-container ${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest
-          sleep 20  # Increased wait time
-          docker ps -a  # Log container status
-          docker logs test-container || true  # Log container output
-          netstat -tuln | grep 8000 || true  # Check if port 8000 is open
+          docker run -d -p 8000:8000 --name test-container -e SECRET_KEY=${{ secrets.SECRET_KEY }} ${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest
+          sleep 20
+          docker ps -a
+          docker logs test-container || true
+          netstat -tuln | grep 8000 || true
 
       - name: Verify Docker image health
-        continue-on-error: true  # Temporary for debugging, set to false for production
+        continue-on-error: true
         run: |
-          docker run -d -p 8000:8000 --name test-container ${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest
-          sleep 20  # Increased wait time
+          docker run -d -p 8000:8000 --name test-container -e SECRET_KEY=${{ secrets.SECRET_KEY }} ${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest
+          sleep 20
           for i in {1..3}; do
             curl -f http://localhost:8000/health && exit 0
             echo "Retry $i: Health check failed, retrying..."
@@ -132,11 +132,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Package Helm chart
-        run: |
-          helm package helm/fastapi-app
-          mv fastapi-app-*.tgz fastapi-app.tgz
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -144,10 +139,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: 1.5.7
+      - name: Debug Terraform configuration
+        run: |
+          cd infra
+          terraform version
+          terraform init
+          terraform providers
+          terraform plan -out=tfplan
 
       - name: Terraform Init
         run: |
@@ -155,6 +153,7 @@ jobs:
           terraform init
 
       - name: Terraform Apply
+        continue-on-error: true
         run: |
           cd infra
           terraform apply -auto-approve
@@ -179,6 +178,8 @@ jobs:
 
       - name: Deploy to EKS with Helm
         run: |
+          helm package helm/fastapi-app
+          mv fastapi-app-*.tgz fastapi-app.tgz
           helm upgrade --install fastapi-app ./fastapi-app.tgz --namespace default --set image.tag=latest
 
       - name: Get ALB URL

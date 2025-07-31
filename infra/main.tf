@@ -1,7 +1,28 @@
-provider "aws" {
-  region = var.region
+# Configuring Terraform and required providers
+terraform {
+  required_version = ">= 1.5.7"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.40.0"
+    }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 2.12.1"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.27.0"
+    }
+  }
 }
 
+# AWS provider for ap-south-1
+provider "aws" {
+  region = "ap-south-1"
+}
+
+# Helm provider with EKS authentication
 provider "helm" {
   kubernetes {
     host                   = module.eks.cluster_endpoint
@@ -9,117 +30,96 @@ provider "helm" {
     exec {
       api_version = "client.authentication.k8s.io/v1beta1"
       command     = "aws"
-      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.region]
+      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", "ap-south-1"]
     }
   }
 }
 
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "5.1.2"
-
-  name = "git-action-aws-vpc"
-  cidr = "10.0.0.0/16"
-  azs  = ["${var.region}a", "${var.region}b"]
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
-  enable_nat_gateway = true
-  single_nat_gateway = true
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = {
-    "kubernetes.io/cluster/git-action-eks" = "shared"
-    "Environment" = "production"
+# Kubernetes provider for EKS
+provider "kubernetes" {
+  host                   = module.eks.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "aws"
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", "ap-south-1"]
   }
 }
 
+# VPC module for creating network resources
+module "vpc" {
+  source  = "terraform-aws-modules/vpc/aws"
+  version = "5.7.0"
+
+  name = "git-action-eks-vpc"
+  cidr = var.vpc_cidr
+
+  azs             = ["ap-south-1a", "ap-south-1b"]
+  private_subnets = [cidrsubnet(var.vpc_cidr, 8, 1), cidrsubnet(var.vpc_cidr, 8, 2)]
+  public_subnets  = [cidrsubnet(var.vpc_cidr, 8, 3), cidrsubnet(var.vpc_cidr, 8, 4)]
+
+  enable_nat_gateway = true
+  single_nat_gateway = true
+  enable_vpn_gateway = false
+
+  tags = {
+    Environment = "Production"
+    Project     = "3tier-app"
+    ManagedBy   = "Terraform"
+  }
+}
+
+# EKS module for cluster creation
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "19.15.3"
+  version = "20.8.5"
 
   cluster_name    = "git-action-eks"
   cluster_version = "1.27"
-  vpc_id          = module.vpc.vpc_id
-  subnet_ids      = module.vpc.private_subnets
-  cluster_endpoint_public_access = true
+
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
 
   eks_managed_node_groups = {
     default = {
-      min_size     = 2
-      max_size     = 5
-      desired_size = 3
+      min_size       = 1
+      max_size       = 3
+      desired_size   = 2
       instance_types = ["t3.medium"]
-      disk_size    = 20
+      disk_size      = 20
     }
   }
 
+  cluster_addons = {
+    coredns = {
+      addon_version               = "v1.10.1-eksbuild.1"
+      resolve_conflicts_on_create = "OVERWRITE"
+      resolve_conflicts_on_update = "OVERWRITE"
+    }
+    kube-proxy = {
+      addon_version               = "v1.27.1-eksbuild.1"
+      resolve_conflicts_on_create = "OVERWRITE"
+      resolve_conflicts_on_update = "OVERWRITE"
+    }
+    vpc-cni = {
+      addon_version               = "v1.12.6-eksbuild.1"
+      resolve_conflicts_on_create = "OVERWRITE"
+      resolve_conflicts_on_update = "OVERWRITE"
+    }
+  }
+
+  depends_on = [module.vpc]
+
   tags = {
-    Environment = "production"
+    Environment = "Production"
+    Project     = "3tier-app"
+    ManagedBy   = "Terraform"
   }
 }
 
-resource "aws_eks_addon" "aws_ebs_csi_driver" {
-  cluster_name = module.eks.cluster_name
-  addon_name   = "aws-ebs-csi-driver"
-}
-
-resource "aws_iam_role" "alb_controller_role" {
-  name = "git-action-eks-alb-controller"
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Principal = {
-          Service = "eks.amazonaws.com"
-        }
-        Action = "sts:AssumeRole"
-      },
-      {
-        Effect = "Allow"
-        Principal = {
-          Federated = module.eks.oidc_provider_arn
-        }
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Condition = {
-          StringEquals = {
-            "${module.eks.oidc_provider}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
-          }
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "alb_controller_policy" {
-  role       = aws_iam_role.alb_controller_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLoadBalancerControllerIAMPolicy"
-}
-
-resource "helm_release" "aws_load_balancer_controller" {
-  name       = "aws-load-balancer-controller"
-  repository = "https://aws.github.io/eks-charts"
-  chart      = "aws-load-balancer-controller"
-  namespace  = "kube-system"
-
-  set {
-    name  = "clusterName"
-    value = module.eks.cluster_name
-  }
-
-  set {
-    name  = "serviceAccount.create"
-    value = "true"
-  }
-
-  set {
-    name  = "serviceAccount.name"
-    value = "aws-load-balancer-controller"
-  }
-
-  set {
-    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = aws_iam_role.alb_controller_role.arn
-  }
+# Variables for configurable settings
+variable "vpc_cidr" {
+  description = "CIDR block for the VPC"
+  type        = string
+  default     = "10.0.0.0/16"
 }
