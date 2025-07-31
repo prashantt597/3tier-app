@@ -85,6 +85,17 @@ module "vpc" {
   }
 }
 
+# Security group rule for EKS cluster public access
+resource "aws_security_group_rule" "eks_public_access" {
+  type              = "ingress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]  # Consider restricting to GitHub Actions IPs
+  security_group_id = module.eks.cluster_security_group_id
+  description       = "Allow public access to EKS cluster endpoint from GitHub Actions"
+}
+
 # EKS module for cluster creation
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
@@ -99,6 +110,9 @@ module "eks" {
   # Enable public endpoint for GitHub Actions access
   cluster_endpoint_public_access  = true
   cluster_endpoint_private_access = false
+
+  # Disable automatic CloudWatch log group creation
+  create_cloudwatch_log_group = false
 
   eks_managed_node_groups = {
     default = {

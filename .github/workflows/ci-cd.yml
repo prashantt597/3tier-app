@@ -151,6 +151,7 @@ jobs:
           terraform init
           terraform providers
           terraform plan -out=tfplan
+          terraform show tfplan
 
       - name: Terraform Init
         run: |
@@ -169,11 +170,15 @@ jobs:
           version: 'v1.27.0'
 
       - name: Debug kubectl configuration
+        continue-on-error: true
         run: |
           aws eks --region ap-south-1 describe-cluster --name git-action-eks || true
           aws eks --region ap-south-1 update-kubeconfig --name git-action-eks
           kubectl config view
           kubectl cluster-info || true
+          kubectl get nodes || true
+          echo "Testing EKS endpoint connectivity"
+          curl -k -v https://$(aws eks describe-cluster --region ap-south-1 --name git-action-eks --query 'cluster.endpoint' --output text) || true
 
       - name: Configure kubectl
         run: |
