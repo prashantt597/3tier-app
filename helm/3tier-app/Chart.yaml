@@ -1,0 +1,5 @@
+apiVersion: v2
+name: three-tier-app
+description: A Helm chart for a 3-tier application (ReactJS frontend, NodeJS backend)
+version: 0.1.0
+appVersion: "1.0"

@@ -1,0 +1,13 @@
+frontend:
+  image: your-org/3tier-app-frontend:latest
+  replicas: 2
+  port: 80
+
+backend:
+  image: your-org/3tier-app-backend:latest
+  replicas: 2
+  port: 3000
+
+ingress:
+  enabled: true
+  hostname: "" # Set your domain or leave empty for ALB DNS

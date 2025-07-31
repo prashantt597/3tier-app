@@ -1,4 +1,13 @@
 {
+  "scripts": {
+    "test": "jest --coverage"
+  },
+  "devDependencies": {
+    "jest": "^29.5.0",
+    "@testing-library/react": "^14.0.0",
+    "@testing-library/jest-dom": "^5.16.5"
+  }
+}{
   "name": "client",
   "version": "0.1.0",
   "private": true,
@@ -41,5 +50,15 @@
   },
   "devDependencies": {
     "typescript": "^4.9.5"
+  }
+}
+{
+  "scripts": {
+    "test": "jest --coverage"
+  },
+  "devDependencies": {
+    "jest": "^29.5.0",
+    "@testing-library/react": "^14.0.0",
+    "@testing-library/jest-dom": "^5.16.5"
   }
 }
