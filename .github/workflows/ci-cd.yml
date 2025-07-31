@@ -31,24 +31,6 @@ jobs:
           cd client
           python -m pytest -vv --cov=app --cov-report=xml tests/ || echo "Test errors: $(cat pytest.log)"  # Capture detailed output
 
-      - name: Run Trivy scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'docker.io/${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest'
-          format: 'table'
-          exit-code: '1'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          severity: 'CRITICAL,HIGH'
-
-      - name: SonarQube Scan
-        uses: sonarsource/sonarqube-scan-action@master
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        with:
-          projectBaseDir: client
-
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -60,6 +42,29 @@ jobs:
           cd client
           docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest .
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest
+
+      - name: Verify Docker image availability
+        run: |
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest || { echo "Failed to pull image"; exit 1; }
+
+      - name: Run Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'docker.io/${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+          skip-version-check: true
+
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          projectBaseDir: client
 
       - name: Verify Docker image health
         run: |
