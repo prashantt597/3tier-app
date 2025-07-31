@@ -164,21 +164,40 @@ jobs:
           cd infra
           terraform apply -auto-approve
 
+      - name: Wait for EKS Cluster to be Active
+        continue-on-error: true
+        run: |
+          echo "Waiting for EKS cluster to be active..."
+          for i in {1..30}; do
+            STATUS=$(aws eks --region ap-south-1 describe-cluster --name git-action-eks --query 'cluster.status' --output text)
+            if [ "$STATUS" = "ACTIVE" ]; then
+              echo "Cluster is ACTIVE"
+              exit 0
+            fi
+            echo "Cluster status: $STATUS, retrying ($i/30)..."
+            sleep 30
+          done
+          echo "Cluster did not become ACTIVE after 15 minutes"
+          exit 1
+
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
         with:
-          version: 'v1.27.0'
+          version: 'v1.29.0'
 
       - name: Debug kubectl configuration
         continue-on-error: true
         run: |
-          aws eks --region ap-south-1 describe-cluster --name git-action-eks || true
+          aws eks --region ap-south-1 describe-cluster --name git-action-eks --query 'cluster.{endpoint:endpoint, status:status, vpcId:vpcId, subnetIds:subnetIds, securityGroups:securityGroups}' --output json || true
           aws eks --region ap-south-1 update-kubeconfig --name git-action-eks
           kubectl config view
           kubectl cluster-info || true
-          kubectl get nodes || true
+          kubectl get nodes -o wide || true
           echo "Testing EKS endpoint connectivity"
-          curl -k -v https://$(aws eks describe-cluster --region ap-south-1 --name git-action-eks --query 'cluster.endpoint' --output text) || true
+          EKS_ENDPOINT=$(aws eks describe-cluster --region ap-south-1 --name git-action-eks --query 'cluster.endpoint' --output text)
+          echo "EKS Endpoint: $EKS_ENDPOINT"
+          curl -k -v $EKS_ENDPOINT || true
+          ping -c 3 $EKS_ENDPOINT || true
 
       - name: Configure kubectl
         run: |
@@ -187,6 +206,11 @@ jobs:
       - name: Create Kubernetes Secret
         continue-on-error: true
         run: |
+          echo "SECRET_KEY is set: ${{ secrets.SECRET_KEY != '' }}"
+          if [ -z "${{ secrets.SECRET_KEY }}" ]; then
+            echo "Error: SECRET_KEY is empty or unset"
+            exit 1
+          fi
           kubectl create secret generic app-secrets --from-literal=secret-key=${{ secrets.SECRET_KEY }} -n default --dry-run=client -o yaml | kubectl apply -f --request-timeout=60s
 
       - name: Install Helm

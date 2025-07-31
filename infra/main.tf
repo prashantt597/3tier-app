@@ -53,7 +53,7 @@ data "aws_ami" "eks_optimized" {
 
   filter {
     name   = "name"
-    values = ["amazon-eks-node-1.27-*"]
+    values = ["amazon-eks-node-1.29-*"]
   }
 
   filter {
@@ -102,14 +102,15 @@ module "eks" {
   version = "20.8.5"
 
   cluster_name    = "git-action-eks"
-  cluster_version = "1.27"
+  cluster_version = "1.29"
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  # Enable public endpoint for GitHub Actions access
+  # Ensure public endpoint only
   cluster_endpoint_public_access  = true
   cluster_endpoint_private_access = false
+  cluster_endpoint_public_access_cidrs = ["0.0.0.0/0"]  # Allow all IPs (restrict for production)
 
   # Disable automatic CloudWatch log group creation
   create_cloudwatch_log_group = false
@@ -127,23 +128,23 @@ module "eks" {
 
   cluster_addons = {
     coredns = {
-      addon_version               = "v1.10.1-eksbuild.1"
+      addon_version               = "v1.11.1-eksbuild.1"
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
     }
     kube-proxy = {
-      addon_version               = "v1.27.1-eksbuild.1"
+      addon_version               = "v1.29.0-eksbuild.1"
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
     }
     vpc-cni = {
-      addon_version               = "v1.12.6-eksbuild.1"
+      addon_version               = "v1.18.1-eksbuild.3"
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
     }
   }
 
-  depends_on = [module.vpc]
+  depends_on = [module.vpc, aws_security_group_rule.eks_public_access]
 
   tags = {
     Environment = "Production"
