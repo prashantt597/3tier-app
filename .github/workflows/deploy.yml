@@ -36,7 +36,7 @@ jobs:
       - name: Frontend Unit Tests
         run: |
           cd client
-          npm ci
+          npm ci --legacy-peer-deps
           npm test || true
 
       # Install backend dependencies and run tests
@@ -87,7 +87,7 @@ jobs:
       # Build and push frontend Docker image
       - name: Build and Push Frontend Docker Image
         env:
-          REACT_APP_API: http://placeholder # Will be updated in deploy-app
+          REACT_APP_API: http://placeholder
         run: |
           cd client
           docker build --build-arg REACT_APP_API=$REACT_APP_API -t ${{ env.DOCKERHUB_REPOSITORY }}-frontend:${{ github.sha }} .
@@ -211,7 +211,6 @@ jobs:
         run: |
           ALB_URL=$(kubectl get ingress -n default -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' || echo "Ingress not ready")
           echo "Application is accessible at: http://$ALB_URL"
-          # Update REACT_APP_API for frontend if needed
           if [ "$ALB_URL" != "Ingress not ready" ]; then
             echo "REACT_APP_API=http://$ALB_URL/api" >> $GITHUB_ENV
           fi
