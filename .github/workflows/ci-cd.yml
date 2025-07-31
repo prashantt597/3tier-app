@@ -2,7 +2,14 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:  # Added for manual triggering
 jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Debug trigger
+        run: echo "Workflow triggered successfully"
+
   setup:
     runs-on: ubuntu-latest
     steps:
