@@ -144,7 +144,7 @@ module "eks" {
     }
   }
 
-  depends_on = [module.vpc, aws_security_group_rule.eks_public_access]
+  depends_on = [module.vpc]
 
   tags = {
     Environment = "Production"
