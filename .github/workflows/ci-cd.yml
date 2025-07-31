@@ -49,10 +49,12 @@ jobs:
 
       - name: Run Trivy scan
         uses: aquasecurity/trivy-action@master
+        env:
+          TRIVY_DISABLE_VEX_NOTICE: true
         with:
           image-ref: 'docker.io/${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest'
           format: 'table'
-          exit-code: '1'
+          exit-code: '1'  # Set to '0' temporarily for testing, revert to '1' for production
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
