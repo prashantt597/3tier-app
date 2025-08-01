@@ -157,13 +157,17 @@ jobs:
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.5.7
+      - name: Terraform Apply S3 Resources
+        run: |
+          cd infra
+          terraform apply -target=aws_s3_bucket.terraform_state -target=aws_s3_bucket_public_access_block.terraform_state -target=aws_dynamodb_table.terraform_locks -auto-approve -var="region=ap-south-1" -var="account_id=${{ secrets.AWS_ACCOUNT_ID }}"
       - name: Initialize Terraform with S3 Backend
         run: |
           cd infra
-          terraform init -backend-config="bucket=terraform-state-ap-south-1-${{ secrets.AWS_ACCOUNT_ID }}" \
+          terraform init -backend-config="bucket=terraform-state-${{ secrets.AWS_ACCOUNT_ID }}" \
                          -backend-config="key=terraform.tfstate" \
                          -backend-config="region=ap-south-1" \
-                         -backend-config="dynamodb_table=terraform-locks-ap-south-1-${{ secrets.AWS_ACCOUNT_ID }}"
+                         -backend-config="dynamodb_table=terraform-locks-${{ secrets.AWS_ACCOUNT_ID }}"
       - name: Debug Terraform configuration
         run: |
           cd infra
