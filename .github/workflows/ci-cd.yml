@@ -164,21 +164,11 @@ jobs:
       - name: Terraform Apply S3 Resources
         run: |
           cd infra
-          echo "Applying with account_id: ${{ secrets.AWS_ACCOUNT_ID }}"
           terraform apply -target=random_string.s3_prefix -target=aws_s3_bucket.terraform_state -target=aws_s3_bucket_versioning.terraform_state -target=aws_s3_bucket_public_access_block.terraform_state -target=aws_dynamodb_table.terraform_locks -auto-approve -var="region=ap-south-1" -var="account_id=${{ secrets.AWS_ACCOUNT_ID }}" -var="image_repository=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/3tier-app" -var="image_tag=latest" -var="deployment_id=${{ github.run_id }}"
-      - name: Terraform Init with S3 Backend
-        run: |
-          cd infra
-          terraform init -reconfigure -backend-config="bucket=terraform-state-${{ steps.get_prefix.outputs.prefix }}-${{ secrets.AWS_ACCOUNT_ID }}" -backend-config="key=terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="dynamodb_table=terraform-locks-${{ steps.get_prefix.outputs.prefix }}-${{ secrets.AWS_ACCOUNT_ID }}"
-        id: init_with_backend
       - name: Get Random Prefix
         id: get_prefix
         run: |
           cd infra
-          echo "Checking Terraform state..."
-          terraform state list || echo "State list failed"
-          echo "Refreshing Terraform state..."
-          terraform refresh -var="region=ap-south-1" -var="account_id=${{ secrets.AWS_ACCOUNT_ID }}" -var="image_repository=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/3tier-app" -var="image_tag=latest" -var="deployment_id=${{ github.run_id }}" || echo "Refresh failed"
           echo "Capturing prefix output..."
           (terraform show -json | jq -r '.values.outputs.s3_prefix.value' > prefix.txt) 2>/dev/null || echo "Output not found" > prefix.txt
           PREFIX=$(cat prefix.txt)
@@ -190,6 +180,11 @@ jobs:
           echo "prefix=$PREFIX" >> $GITHUB_OUTPUT
           echo "Generated prefix: $PREFIX"
           rm -f prefix.txt
+      - name: Terraform Init with S3 Backend
+        run: |
+          cd infra
+          terraform init -reconfigure -backend-config="bucket=terraform-state-${{ steps.get_prefix.outputs.prefix }}-${{ secrets.AWS_ACCOUNT_ID }}" -backend-config="key=terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="dynamodb_table=terraform-locks-${{ steps.get_prefix.outputs.prefix }}-${{ secrets.AWS_ACCOUNT_ID }}"
+        id: init_with_backend
       - name: Check VPC Limit
         run: |
           cd infra
