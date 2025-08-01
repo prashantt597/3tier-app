@@ -164,6 +164,7 @@ jobs:
       - name: Terraform Apply S3 Resources
         run: |
           cd infra
+          echo "Applying with account_id: ${{ secrets.AWS_ACCOUNT_ID }}"
           terraform apply -target=random_string.s3_prefix -target=aws_s3_bucket.terraform_state -target=aws_s3_bucket_public_access_block.terraform_state -target=aws_dynamodb_table.terraform_locks -auto-approve -var="region=ap-south-1" -var="account_id=${{ secrets.AWS_ACCOUNT_ID }}"
       - name: Terraform Init with S3 Backend
         run: |
@@ -179,6 +180,7 @@ jobs:
           cd infra
           PREFIX=$(terraform output -raw s3_prefix)
           echo "prefix=$PREFIX" >> $GITHUB_OUTPUT
+          echo "Generated prefix: $PREFIX"
       - name: Debug Terraform configuration
         run: |
           cd infra
