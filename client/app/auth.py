@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from .config import settings
 from .models import User
+from .utils.security import verify_password
 from .crud import get_user_by_username
 from sqlalchemy.orm import Session
 from .database import get_db
