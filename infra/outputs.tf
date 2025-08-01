@@ -1,23 +1,19 @@
-# Output for EKS cluster endpoint
 output "cluster_endpoint" {
-  description = "EKS cluster endpoint"
+  description = "Endpoint for EKS control plane"
   value       = module.eks.cluster_endpoint
 }
 
-# Output for EKS cluster name
-output "cluster_name" {
-  description = "EKS cluster name"
-  value       = module.eks.cluster_name
+output "cluster_status" {
+  description = "Current status of the EKS cluster"
+  value       = module.eks.cluster_status
 }
 
-# Output for EKS cluster security group ID
-output "cluster_security_group_id" {
-  description = "Security group ID for EKS cluster"
-  value       = module.eks.cluster_security_group_id
+output "alb_dns" {
+  description = "DNS name of the Application Load Balancer"
+  value       = aws_lb.alb.dns_name
 }
 
-# Output the IAM role ARN
 output "aws_load_balancer_controller_role_arn" {
-  description = "ARN of the AWS Load Balancer Controller IAM role"
+  description = "ARN of the IAM role for AWS Load Balancer Controller"
   value       = aws_iam_role.aws_load_balancer_controller.arn
 }

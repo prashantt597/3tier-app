@@ -15,11 +15,19 @@ terraform {
       version = "~> 2.27.0"
     }
   }
+
+  backend "s3" {
+    bucket         = "terraform-state-${var.region}-${var.account_id}"
+    key            = "terraform.tfstate"
+    region         = var.region
+    dynamodb_table = "terraform-locks-${var.region}-${var.account_id}"
+    encrypt        = true
+  }
 }
 
-# AWS provider for ap-south-1
+# AWS provider with parameterized region
 provider "aws" {
-  region = "ap-south-1"
+  region = var.region
 }
 
 # Helm provider with EKS authentication
@@ -30,7 +38,7 @@ provider "helm" {
     exec {
       api_version = "client.authentication.k8s.io/v1beta1"
       command     = "aws"
-      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", "ap-south-1"]
+      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.region]
     }
   }
 }
@@ -42,7 +50,7 @@ provider "kubernetes" {
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
     command     = "aws"
-    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", "ap-south-1"]
+    args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.region]
   }
 }
 
@@ -67,7 +75,7 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.7.0"
 
-  name = "git-action-eks-vpc"
+  name = "${var.cluster_name}-vpc"
   cidr = var.vpc_cidr
 
   azs             = ["ap-south-1a", "ap-south-1b"]
@@ -101,7 +109,7 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "20.8.5"
 
-  cluster_name    = "git-action-eks"
+  cluster_name    = var.cluster_name
   cluster_version = "1.28"
 
   vpc_id     = module.vpc.vpc_id
@@ -118,8 +126,8 @@ module "eks" {
   eks_managed_node_groups = {
     default = {
       min_size       = 1
-      max_size       = 3
-      desired_size   = 2
+      max_size       = var.node_count + 1
+      desired_size   = var.node_count
       instance_types = ["t3.medium"]
       disk_size      = 20
       ami_id         = data.aws_ami.eks_optimized.id
@@ -163,7 +171,7 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
   data = {
     "mapUsers" = yamlencode([
       {
-        userarn  = "arn:aws:iam::765455500374:root"
+        userarn  = "arn:aws:iam::${var.account_id}:root"
         username = "root-user"
         groups   = ["system:masters"]
       }
@@ -175,7 +183,7 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
 
 # IAM Role for AWS Load Balancer Controller
 resource "aws_iam_role" "aws_load_balancer_controller" {
-  name = "AWSLoadBalancerControllerRole"
+  name = "AWSLoadBalancerControllerRole-${var.cluster_name}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -208,9 +216,23 @@ resource "aws_iam_role_policy_attachment" "aws_load_balancer_controller_attach" 
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSLoadBalancerControllerRole"
 }
 
-# Variables for configurable settings
-variable "vpc_cidr" {
-  description = "CIDR block for the VPC"
-  type        = string
-  default     = "10.0.0.0/16"
+# Add S3 bucket and DynamoDB for Terraform state
+resource "aws_s3_bucket" "terraform_state" {
+  bucket = "terraform-state-${var.region}-${var.account_id}"
+  versioning {
+    enabled = true
+  }
+  tags = {
+    Environment = "Production"
+    Project     = "3tier-app"
+    ManagedBy   = "Terraform"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "terraform_state" {
+  bucket = aws_s3_bucket.terraform_state.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }

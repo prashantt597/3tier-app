@@ -3,6 +3,11 @@ on:
   push:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      destroy:
+        description: 'Trigger Terraform destroy'
+        required: false
+        default: 'false'
 jobs:
   debug:
     runs-on: ubuntu-latest
@@ -15,11 +20,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.7
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
 
   test:
     needs: setup
@@ -27,25 +41,21 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Install dependencies
         run: |
           cd client
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip list
-
       - name: Check for dependency vulnerabilities
         run: |
           cd client
           pip install pip-audit
           pip-audit -r requirements.txt || true
-
       - name: Run unit tests with coverage
         run: |
           cd client
@@ -59,41 +69,35 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Shallow clones should be disabled for better relevancy of analysis
-
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Build and push Docker image
         run: |
           cd client
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest .
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest
-
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/3tier-app:latest .
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/3tier-app:latest
       - name: Verify Docker image availability
         run: |
-          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest || { echo "Failed to pull image"; exit 1; }
-
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/3tier-app:latest || { echo "Failed to pull image"; exit 1; }
       - name: Run Trivy scan
         uses: aquasecurity/trivy-action@master
         env:
           TRIVY_DISABLE_VEX_NOTICE: true
         with:
-          image-ref: 'docker.io/${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest'
+          image-ref: 'docker.io/${{ secrets.DOCKERHUB_USERNAME }}/3tier-app:latest'
           format: 'table'
           exit-code: '1'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL,HIGH'
           skip-version-check: true
-
       - name: Debug SonarCloud configuration
         run: |
           echo "SONAR_HOST_URL: https://sonarcloud.io"
           echo "SONAR_TOKEN is set: ${{ secrets.SONAR_TOKEN != '' }}"
-
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5
         env:
@@ -102,24 +106,22 @@ jobs:
         with:
           projectBaseDir: client
           args: >
-            -Dsonar.projectKey=${{ github.repository }}
+            -Dsonar.projectKey=prashantt597_3tier-app
             -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }} # Add this if you have a SonarCloud organization
             -Dsonar.sources=.
             -Dsonar.exclusions=tests/**,*/migrations/*
             -Dsonar.python.coverage.reportPaths=coverage.xml
-
       - name: Debug Docker container
         run: |
-          docker run -d -p 8000:8000 --name test-container -e SECRET_KEY=${{ secrets.SECRET_KEY }} ${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest
+          docker run -d -p 8000:8000 --name test-container -e SECRET_KEY=${{ secrets.SECRET_KEY }} ${{ secrets.DOCKERHUB_USERNAME }}/3tier-app:latest
           sleep 20
           docker ps -a
           docker logs test-container || true
           netstat -tuln | grep 8000 || true
-
       - name: Verify Docker image health
         continue-on-error: true
         run: |
-          docker run -d -p 8000:8000 --name test-container -e SECRET_KEY=${{ secrets.SECRET_KEY }} ${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws:latest
+          docker run -d -p 8000:8000 --name test-container -e SECRET_KEY=${{ secrets.SECRET_KEY }} ${{ secrets.DOCKERHUB_USERNAME }}/3tier-app:latest
           sleep 20
           for i in {1..3}; do
             curl -f http://localhost:8000/health && exit 0
@@ -136,36 +138,44 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
-
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.5.7
-
+      - name: Initialize Terraform with S3 Backend
+        run: |
+          cd infra
+          terraform init -backend-config="bucket=terraform-state-ap-south-1-${{ secrets.AWS_ACCOUNT_ID }}" \
+                         -backend-config="key=terraform.tfstate" \
+                         -backend-config="region=ap-south-1" \
+                         -backend-config="dynamodb_table=terraform-locks-ap-south-1-${{ secrets.AWS_ACCOUNT_ID }}"
       - name: Debug Terraform configuration
         run: |
           cd infra
           terraform version
           terraform init -reconfigure
           terraform providers
-          terraform plan -out=tfplan
+          terraform plan -out=tfplan -var="vpc_cidr=10.0.0.0/16" -var="cluster_name=git-action-eks" -var="node_count=2"
           terraform show tfplan
           terraform output -json > terraform_outputs.json
-
       - name: Terraform Apply
-        continue-on-error: true
+        if: github.event.inputs.destroy != 'true'
         run: |
           cd infra
-          terraform apply -auto-approve
-
+          terraform apply -auto-approve -var="vpc_cidr=10.0.0.0/16" -var="cluster_name=git-action-eks" -var="node_count=2"
+      - name: Terraform Destroy
+        if: github.event.inputs.destroy == 'true'
+        run: |
+          cd infra
+          terraform destroy -auto-approve -var="vpc_cidr=10.0.0.0/16" -var="cluster_name=git-action-eks" -var="node_count=2"
       - name: Wait for and Recreate EKS Cluster if Needed
+        if: github.event.inputs.destroy != 'true'
         continue-on-error: true
         run: |
           echo "Waiting for or recreating EKS cluster..."
@@ -177,7 +187,7 @@ jobs:
             elif [ "$STATUS" = "NOT_FOUND" ]; then
               echo "Cluster not found, triggering recreation ($i/60)..."
               cd infra
-              terraform apply -auto-approve
+              terraform apply -auto-approve -var="vpc_cidr=10.0.0.0/16" -var="cluster_name=git-action-eks" -var="node_count=2"
               cd ..
             else
               echo "Cluster status: $STATUS, retrying ($i/60)..."
@@ -186,12 +196,10 @@ jobs:
           done
           echo "Cluster did not become ACTIVE after 30 minutes"
           exit 1
-
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
         with:
           version: 'v1.28.0'
-
       - name: Debug kubectl configuration
         continue-on-error: true
         run: |
@@ -204,11 +212,9 @@ jobs:
           EKS_ENDPOINT=$(aws eks describe-cluster --region ap-south-1 --name git-action-eks --query 'cluster.endpoint' --output text)
           curl -k -v $EKS_ENDPOINT || true
           ping -c 3 $EKS_ENDPOINT || true
-
       - name: Configure kubectl
         run: |
           aws eks --region ap-south-1 update-kubeconfig --name git-action-eks
-
       - name: Create Kubernetes Secret
         continue-on-error: true
         run: |
@@ -218,12 +224,10 @@ jobs:
             exit 1
           fi
           kubectl create secret generic app-secrets --from-literal=secret-key=${{ secrets.SECRET_KEY }} -n default --dry-run=client -o yaml | kubectl apply -f --request-timeout=60s
-
       - name: Install Helm
         uses: azure/setup-helm@v3
         with:
           version: 'v3.12.0'
-
       - name: Install AWS Load Balancer Controller
         continue-on-error: true
         run: |
@@ -237,15 +241,15 @@ jobs:
             --set serviceAccount.name=aws-load-balancer-controller \
             --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=$ALB_CONTROLLER_ROLE_ARN \
             --wait --timeout 10m
-
       - name: Deploy to EKS with Helm
+        if: github.event.inputs.destroy != 'true'
         continue-on-error: true
         run: |
           helm package helm/fastapi-app
           mv fastapi-app-*.tgz fastapi-app.tgz
-          helm upgrade --install fastapi-app ./fastapi-app.tgz --namespace default --set image.tag=latest --timeout 15m
-
+          helm upgrade --install fastapi-app ./fastapi-app.tgz --namespace default --set image.repository=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/3tier-app --set image.tag=latest --timeout 15m
       - name: Debug Ingress and ALB
+        if: github.event.inputs.destroy != 'true'
         continue-on-error: true
         run: |
           echo "Listing all ingresses:"
@@ -254,8 +258,8 @@ jobs:
           kubectl describe ingress -n default || true
           echo "Checking ALB controller pods:"
           kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o wide || true
-
       - name: Get ALB URL
+        if: github.event.inputs.destroy != 'true'
         id: alb_url
         continue-on-error: true
         run: |
@@ -271,7 +275,7 @@ jobs:
           done
           echo "Failed to retrieve ALB URL after 15 attempts"
           exit 1
-
       - name: Output ALB URL
+        if: github.event.inputs.destroy != 'true'
         run: |
-          echo "Application is accessible at: ${{ env.ALB_URL }}"
+          echo "Application is accessible at: http://${{ env.ALB_URL }}"
