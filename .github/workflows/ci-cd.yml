@@ -180,7 +180,9 @@ jobs:
           cd infra
           echo "Checking Terraform state..."
           terraform state list || echo "State list failed"
-          PREFIX=$(terraform output -raw s3_prefix || echo "Output not found")
+          echo "Refreshing Terraform state..."
+          terraform refresh -var="region=ap-south-1" -var="account_id=${{ secrets.AWS_ACCOUNT_ID }}" -var="image_repository=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/3tier-app" -var="image_tag=latest" || echo "Refresh failed"
+          PREFIX=$(terraform output -raw s3_prefix 2>/dev/null || echo "Output not found")
           echo "prefix=$PREFIX" >> $GITHUB_OUTPUT
           echo "Generated prefix: $PREFIX"
       - name: Debug Terraform configuration
