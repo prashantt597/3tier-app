@@ -1,32 +1,42 @@
-replicaCount: 3
+replicaCount: 2
+
 image:
-  repository: docker.io/prashant0597/git_action_aws
-  tag: latest
-  pullPolicy: Always
+  repository: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/git_action_aws
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
 service:
   type: ClusterIP
-  port: 80
+  port: 8000
+
 ingress:
   enabled: true
   annotations:
-    kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/healthcheck-path: /health
   hosts:
-    - host: ""
+    - host: fastapi.example.com
       paths:
         - path: /
           pathType: Prefix
+  tls: []
+
 resources:
   limits:
-    cpu: "500m"
-    memory: "512Mi"
+    cpu: 100m
+    memory: 128Mi
   requests:
-    cpu: "200m"
-    memory: "256Mi"
-hpa:
-  enabled: true
-  minReplicas: 3
-  maxReplicas: 10
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
   targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

@@ -53,7 +53,7 @@ data "aws_ami" "eks_optimized" {
 
   filter {
     name   = "name"
-    values = ["amazon-eks-node-1.29-*"]
+    values = ["amazon-eks-node-1.28-*"]
   }
 
   filter {
@@ -91,9 +91,9 @@ resource "aws_security_group_rule" "eks_public_access" {
   from_port         = 443
   to_port           = 443
   protocol          = "tcp"
-  cidr_blocks       = ["0.0.0.0/0"]  # Consider restricting to GitHub Actions IPs
+  cidr_blocks       = ["0.0.0.0/0"]  # Restrict to GitHub Actions IPs in production
   security_group_id = module.eks.cluster_security_group_id
-  description       = "Allow public access to EKS cluster endpoint from GitHub Actions"
+  description       = "Allow public access to EKS cluster endpoint"
 }
 
 # EKS module for cluster creation
@@ -102,7 +102,7 @@ module "eks" {
   version = "20.8.5"
 
   cluster_name    = "git-action-eks"
-  cluster_version = "1.29"
+  cluster_version = "1.28"
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
@@ -110,7 +110,7 @@ module "eks" {
   # Ensure public endpoint only
   cluster_endpoint_public_access  = true
   cluster_endpoint_private_access = false
-  cluster_endpoint_public_access_cidrs = ["0.0.0.0/0"]  # Allow all IPs (restrict for production)
+  cluster_endpoint_public_access_cidrs = ["0.0.0.0/0"]  # Restrict in production
 
   # Disable automatic CloudWatch log group creation
   create_cloudwatch_log_group = false
@@ -128,17 +128,17 @@ module "eks" {
 
   cluster_addons = {
     coredns = {
-      addon_version               = "v1.11.1-eksbuild.1"
+      addon_version               = "v1.10.1-eksbuild.6"
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
     }
     kube-proxy = {
-      addon_version               = "v1.29.0-eksbuild.1"
+      addon_version               = "v1.28.0-eksbuild.1"
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
     }
     vpc-cni = {
-      addon_version               = "v1.18.1-eksbuild.3"
+      addon_version               = "v1.16.0-eksbuild.1"
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
     }
@@ -151,6 +151,26 @@ module "eks" {
     Project     = "3tier-app"
     ManagedBy   = "Terraform"
   }
+}
+
+# Kubernetes ConfigMap for aws-auth to map IAM user
+resource "kubernetes_config_map_v1_data" "aws_auth" {
+  metadata {
+    name      = "aws-auth"
+    namespace = "kube-system"
+  }
+
+  data = {
+    "mapUsers" = yamlencode([
+      {
+        userarn  = "arn:aws:iam::765455500374:root"
+        username = "root-user"
+        groups   = ["system:masters"]
+      }
+    ])
+  }
+
+  depends_on = [module.eks]
 }
 
 # Variables for configurable settings

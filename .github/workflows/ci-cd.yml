@@ -153,11 +153,6 @@ jobs:
           terraform plan -out=tfplan
           terraform show tfplan
 
-      - name: Terraform Init
-        run: |
-          cd infra
-          terraform init
-
       - name: Terraform Apply
         continue-on-error: true
         run: |
@@ -183,7 +178,7 @@ jobs:
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
         with:
-          version: 'v1.29.0'
+          version: 'v1.28.0' # Match cluster version
 
       - name: Debug kubectl configuration
         continue-on-error: true
@@ -195,7 +190,6 @@ jobs:
           kubectl get nodes -o wide || true
           echo "Testing EKS endpoint connectivity"
           EKS_ENDPOINT=$(aws eks describe-cluster --region ap-south-1 --name git-action-eks --query 'cluster.endpoint' --output text)
-          echo "EKS Endpoint: $EKS_ENDPOINT"
           curl -k -v $EKS_ENDPOINT || true
           ping -c 3 $EKS_ENDPOINT || true
 
@@ -218,6 +212,19 @@ jobs:
         with:
           version: 'v3.12.0'
 
+      - name: Install AWS Load Balancer Controller
+        continue-on-error: true
+        run: |
+          helm repo add eks https://aws.github.io/eks-charts
+          helm repo update
+          helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+            --namespace kube-system \
+            --set clusterName=git-action-eks \
+            --set serviceAccount.create=true \
+            --set serviceAccount.name=aws-load-balancer-controller \
+            --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=arn:aws:iam::<account-id>:role/AWSLoadBalancerControllerRole \
+            --wait --timeout 5m
+
       - name: Deploy to EKS with Helm
         continue-on-error: true
         run: |
@@ -225,21 +232,31 @@ jobs:
           mv fastapi-app-*.tgz fastapi-app.tgz
           helm upgrade --install fastapi-app ./fastapi-app.tgz --namespace default --set image.tag=latest --timeout 10m
 
+      - name: Debug Ingress and ALB
+        continue-on-error: true
+        run: |
+          echo "Listing all ingresses:"
+          kubectl get ingress -n default -o yaml || true
+          echo "Describing ingress (if any):"
+          kubectl describe ingress -n default || true
+          echo "Checking ALB controller pods:"
+          kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-load-balancer-controller -o wide || true
+
       - name: Get ALB URL
         id: alb_url
         continue-on-error: true
         run: |
-          for i in {1..5}; do
+          for i in {1..10}; do
             ALB_URL=$(kubectl get ingress -n default -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' --request-timeout=60s || true)
             if [ -n "$ALB_URL" ]; then
               echo "ALB_URL=$ALB_URL" >> $GITHUB_ENV
               echo "ALB URL: $ALB_URL"
               exit 0
             fi
-            echo "Retrying ALB URL retrieval ($i/5)..."
+            echo "Retrying ALB URL retrieval ($i/10)..."
             sleep 30
           done
-          echo "Failed to retrieve ALB URL after 5 attempts"
+          echo "Failed to retrieve ALB URL after 10 attempts"
           exit 1
 
       - name: Output ALB URL
