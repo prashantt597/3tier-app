@@ -19,6 +19,13 @@ terraform {
       version = "~> 3.6.0"
     }
   }
+  backend "s3" {
+    bucket         = "terraform-state-${random_string.s3_prefix.result}-${var.region}-${var.account_id}"
+    key            = "terraform.tfstate"
+    region         = var.region
+    dynamodb_table = "terraform-locks-${random_string.s3_prefix.result}-${var.region}-${var.account_id}"
+    encrypt        = true
+  }
 }
 
 # AWS provider with parameterized region
@@ -74,27 +81,9 @@ data "aws_ami" "eks_optimized" {
   }
 }
 
-# VPC module for creating network resources
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "5.7.0"
-
-  name = "${var.cluster_name}-vpc"
-  cidr = var.vpc_cidr
-
-  azs             = ["ap-south-1a", "ap-south-1b"]
-  private_subnets = [cidrsubnet(var.vpc_cidr, 8, 1), cidrsubnet(var.vpc_cidr, 8, 2)]
-  public_subnets  = [cidrsubnet(var.vpc_cidr, 8, 3), cidrsubnet(var.vpc_cidr, 8, 4)]
-
-  enable_nat_gateway = true
-  single_nat_gateway = true
-  enable_vpn_gateway = false
-
-  tags = {
-    Environment = "Production"
-    Project     = "3tier-app"
-    ManagedBy   = "Terraform"
-  }
+# Use an existing VPC (replace with your VPC ID)
+data "aws_vpc" "existing" {
+  id = "vpc-12345678" # Replace with an existing VPC ID in ap-south-1
 }
 
 # Security group rule for EKS cluster public access
@@ -116,8 +105,8 @@ module "eks" {
   cluster_name    = var.cluster_name
   cluster_version = "1.28"
 
-  vpc_id     = module.vpc.vpc_id
-  subnet_ids = module.vpc.private_subnets
+  vpc_id     = data.aws_vpc.existing.id
+  subnet_ids = ["subnet-12345678", "subnet-87654321"]  # Replace with existing subnet IDs in ap-south-1
 
   # Ensure public endpoint only
   cluster_endpoint_public_access  = true
@@ -156,13 +145,17 @@ module "eks" {
     }
   }
 
-  depends_on = [module.vpc]
+  depends_on = [data.aws_vpc.existing]
 
-  tags = {
-    Environment = "Production"
-    Project     = "3tier-app"
-    ManagedBy   = "Terraform"
-  }
+  tags = merge(
+    {
+      Environment   = "Production"
+      Project       = "3tier-app"
+      ManagedBy     = "Terraform"
+      DeploymentID  = var.deployment_id  # Unique ID for tracking
+    },
+    var.tags
+  )
 }
 
 # Kubernetes ConfigMap for aws-auth to map root user
@@ -207,11 +200,15 @@ resource "aws_iam_role" "aws_load_balancer_controller" {
     ]
   })
 
-  tags = {
-    Environment = "Production"
-    Project     = "3tier-app"
-    ManagedBy   = "Terraform"
-  }
+  tags = merge(
+    {
+      Environment   = "Production"
+      Project       = "3tier-app"
+      ManagedBy     = "Terraform"
+      DeploymentID  = var.deployment_id
+    },
+    var.tags
+  )
 }
 
 # Attach the AWS managed policy for Load Balancer Controller
@@ -223,11 +220,17 @@ resource "aws_iam_role_policy_attachment" "aws_load_balancer_controller_attach" 
 # Add S3 bucket and DynamoDB for Terraform state with unique prefix
 resource "aws_s3_bucket" "terraform_state" {
   bucket = "terraform-state-${random_string.s3_prefix.result}-${var.region}-${var.account_id}"
-  tags = {
-    Environment = "Production"
-    Project     = "3tier-app"
-    ManagedBy   = "Terraform"
-  }
+  force_destroy = true  # Automatically delete bucket contents on destroy
+
+  tags = merge(
+    {
+      Environment   = "Production"
+      Project       = "3tier-app"
+      ManagedBy     = "Terraform"
+      DeploymentID  = var.deployment_id
+    },
+    var.tags
+  )
 }
 
 resource "aws_s3_bucket_versioning" "terraform_state" {
@@ -253,11 +256,15 @@ resource "aws_dynamodb_table" "terraform_locks" {
     name = "LockID"
     type = "S"
   }
-  tags = {
-    Environment = "Production"
-    Project     = "3tier-app"
-    ManagedBy   = "Terraform"
-  }
+  tags = merge(
+    {
+      Environment   = "Production"
+      Project       = "3tier-app"
+      ManagedBy     = "Terraform"
+      DeploymentID  = var.deployment_id
+    },
+    var.tags
+  )
 }
 
 # Basic ALB resource (to be adjusted based on requirements)
@@ -266,13 +273,17 @@ resource "aws_lb" "alb" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [module.eks.cluster_security_group_id]
-  subnets            = module.vpc.public_subnets
+  subnets            = ["subnet-12345678", "subnet-87654321"]  # Replace with existing subnet IDs
 
   enable_deletion_protection = false
 
-  tags = {
-    Environment = "Production"
-    Project     = "3tier-app"
-    ManagedBy   = "Terraform"
-  }
+  tags = merge(
+    {
+      Environment   = "Production"
+      Project       = "3tier-app"
+      ManagedBy     = "Terraform"
+      DeploymentID  = var.deployment_id
+    },
+    var.tags
+  )
 }
