@@ -165,7 +165,7 @@ jobs:
         run: |
           cd infra
           echo "Applying with account_id: ${{ secrets.AWS_ACCOUNT_ID }}"
-          terraform apply -target=random_string.s3_prefix -target=aws_s3_bucket.terraform_state -target=aws_s3_bucket_public_access_block.terraform_state -target=aws_dynamodb_table.terraform_locks -auto-approve -var="region=ap-south-1" -var="account_id=${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform apply -target=random_string.s3_prefix -target=aws_s3_bucket.terraform_state -target=aws_s3_bucket_public_access_block.terraform_state -target=aws_dynamodb_table.terraform_locks -auto-approve -var="region=ap-south-1" -var="account_id=${{ secrets.AWS_ACCOUNT_ID }}" -var="image_repository=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/3tier-app" -var="image_tag=latest"
       - name: Terraform Init with S3 Backend
         run: |
           cd infra
