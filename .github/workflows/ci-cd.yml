@@ -246,7 +246,42 @@ jobs:
               aws s3 rb s3://$bucket --force --region ap-south-1 || echo "Failed to delete bucket $bucket"
             done
           fi
-          terraform destroy -auto-approve -var="region=ap-south-1" -var="account_id=${{ secrets.AWS_ACCOUNT_ID }}" -var="image_repository=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/3tier-app" -var="image_tag=${{ github.sha }}" -var="deployment_id=$DEPLOYMENT_ID" || echo "Partial cleanup completed"
+          # Validate and fix bucket name for terraform destroy
+          PREFIX="${{ steps.get_prefix.outputs.prefix }}"
+          BUCKET="terraform-state-${PREFIX}-${{ secrets.AWS_ACCOUNT_ID }}"
+          if aws s3 ls s3://$BUCKET --region ap-south-1 2>&1 | grep -q "NoSuchBucket"; then
+            echo "Bucket $BUCKET not found, initializing new state"
+            terraform init -force-copy -backend-config="bucket=$BUCKET" -backend-config="key=terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="dynamodb_table=terraform-locks-${PREFIX}-${{ secrets.AWS_ACCOUNT_ID }}" || echo "Terraform init failed, proceeding with manual cleanup"
+          else
+            echo "Validating Terraform state backend with bucket: $BUCKET"
+            terraform init -backend-config="bucket=$BUCKET" -backend-config="key=terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="dynamodb_table=terraform-locks-${PREFIX}-${{ secrets.AWS_ACCOUNT_ID }}" || echo "Terraform init failed, proceeding with manual cleanup"
+          fi
+          terraform destroy -auto-approve -var="region=ap-south-1" -var="account_id=${{ secrets.AWS_ACCOUNT_ID }}" -var="image_repository=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/3tier-app" -var="image_tag=${{ github.sha }}" -var="deployment_id=$DEPLOYMENT_ID" || echo "Terraform destroy failed, attempting manual cleanup"
+          # Manual cleanup fallback
+          terraform state list | grep -E 'aws_vpc|aws_s3_bucket' | while read -r resource; do
+            terraform state rm $resource || echo "Failed to remove $resource from state"
+            aws_resource=$(echo $resource | sed 's/\..*//')
+            if [ "$aws_resource" == "aws_vpc" ]; then
+              VPC_ID=$(terraform state show $resource | grep id | awk '{print $3}' || echo "")
+              [ -n "$VPC_ID" ] && aws ec2 delete-vpc --vpc-id $VPC_ID --region ap-south-1 || echo "Failed to delete VPC $VPC_ID"
+            elif [ "$aws_resource" == "aws_s3_bucket" ]; then
+              BUCKET_NAME=$(terraform state show $resource | grep bucket | awk '{print $3}' || echo "")
+              [ -n "$BUCKET_NAME" ] && aws s3 rb s3://$BUCKET_NAME --force --region ap-south-1 || echo "Failed to delete bucket $BUCKET_NAME"
+            fi
+          done
+      - name: Validate Cleanup
+        if: github.event.inputs.destroy != 'true' && failure()
+        run: |
+          cd infra
+          DEPLOYMENT_ID="${{ github.run_id }}"
+          REMAINING_VPCS=$(aws ec2 describe-vpcs --region ap-south-1 --filters "Name=tag:DeploymentID,Values=$DEPLOYMENT_ID" --query 'Vpcs[*].VpcId' --output text)
+          REMAINING_S3=$(aws s3 ls s3://terraform-state-*${{ secrets.AWS_ACCOUNT_ID }} --region ap-south-1 --query 'Buckets[?contains(Name, `terraform-state-`) && contains(Name, `${{ secrets.AWS_ACCOUNT_ID }}`) && !contains(Name, `terraform-state-${{ steps.get_prefix.outputs.prefix }}`)].Name' --output text)
+          if [ -z "$REMAINING_VPCS" ] && [ -z "$REMAINING_S3" ]; then
+            echo "Cleanup successful: No remaining VPCs or S3 buckets for deployment $DEPLOYMENT_ID"
+          else
+            echo "Warning: Cleanup incomplete - Remaining VPCs: $REMAINING_VPCS, Remaining S3 buckets: $REMAINING_S3"
+            exit 1
+          fi
       - name: Terraform Destroy
         if: github.event.inputs.destroy == 'true'
         run: |
