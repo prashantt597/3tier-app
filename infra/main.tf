@@ -91,7 +91,7 @@ resource "aws_security_group_rule" "eks_public_access" {
   from_port         = 443
   to_port           = 443
   protocol          = "tcp"
-  cidr_blocks       = ["0.0.0.0/0"]  # Restrict to GitHub Actions IPs in production
+  cidr_blocks       = ["0.0.0.0/0"]  # Restrict in production
   security_group_id = module.eks.cluster_security_group_id
   description       = "Allow public access to EKS cluster endpoint"
 }
@@ -153,7 +153,7 @@ module "eks" {
   }
 }
 
-# Kubernetes ConfigMap for aws-auth to map IAM user
+# Kubernetes ConfigMap for aws-auth to map root user
 resource "kubernetes_config_map_v1_data" "aws_auth" {
   metadata {
     name      = "aws-auth"
@@ -173,9 +173,50 @@ resource "kubernetes_config_map_v1_data" "aws_auth" {
   depends_on = [module.eks]
 }
 
+# IAM Role for AWS Load Balancer Controller
+resource "aws_iam_role" "aws_load_balancer_controller" {
+  name = "AWSLoadBalancerControllerRole"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = module.eks.oidc_provider_arn
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            "${module.eks.oidc_provider}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
+          }
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Environment = "Production"
+    Project     = "3tier-app"
+    ManagedBy   = "Terraform"
+  }
+}
+
+# Attach the AWS managed policy for Load Balancer Controller
+resource "aws_iam_role_policy_attachment" "aws_load_balancer_controller_attach" {
+  role       = aws_iam_role.aws_load_balancer_controller.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSLoadBalancerControllerRole"
+}
+
 # Variables for configurable settings
 variable "vpc_cidr" {
   description = "CIDR block for the VPC"
   type        = string
   default     = "10.0.0.0/16"
+}
+
+# Output the IAM role ARN
+output "aws_load_balancer_controller_role_arn" {
+  description = "ARN of the AWS Load Balancer Controller IAM role"
+  value       = aws_iam_role.aws_load_balancer_controller.arn
 }

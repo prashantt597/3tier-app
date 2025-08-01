@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # For manual triggering
+  workflow_dispatch:
 jobs:
   debug:
     runs-on: ubuntu-latest
@@ -148,10 +148,11 @@ jobs:
         run: |
           cd infra
           terraform version
-          terraform init
+          terraform init -reconfigure
           terraform providers
           terraform plan -out=tfplan
           terraform show tfplan
+          terraform output -json > terraform_outputs.json
 
       - name: Terraform Apply
         continue-on-error: true
@@ -163,22 +164,22 @@ jobs:
         continue-on-error: true
         run: |
           echo "Waiting for EKS cluster to be active..."
-          for i in {1..30}; do
-            STATUS=$(aws eks --region ap-south-1 describe-cluster --name git-action-eks --query 'cluster.status' --output text)
+          for i in {1..60}; do
+            STATUS=$(aws eks --region ap-south-1 describe-cluster --name git-action-eks --query 'cluster.status' --output text 2>/dev/null || echo "NOT_FOUND")
             if [ "$STATUS" = "ACTIVE" ]; then
               echo "Cluster is ACTIVE"
               exit 0
             fi
-            echo "Cluster status: $STATUS, retrying ($i/30)..."
+            echo "Cluster status: $STATUS, retrying ($i/60)..."
             sleep 30
           done
-          echo "Cluster did not become ACTIVE after 15 minutes"
+          echo "Cluster did not become ACTIVE after 30 minutes"
           exit 1
 
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
         with:
-          version: 'v1.28.0' # Match cluster version
+          version: 'v1.28.0'
 
       - name: Debug kubectl configuration
         continue-on-error: true
@@ -217,20 +218,21 @@ jobs:
         run: |
           helm repo add eks https://aws.github.io/eks-charts
           helm repo update
+          ALB_CONTROLLER_ROLE_ARN=$(cat ../infra/terraform_outputs.json | jq -r '.aws_load_balancer_controller_role_arn.value')
           helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
             --namespace kube-system \
             --set clusterName=git-action-eks \
             --set serviceAccount.create=true \
             --set serviceAccount.name=aws-load-balancer-controller \
-            --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=arn:aws:iam::<account-id>:role/AWSLoadBalancerControllerRole \
-            --wait --timeout 5m
+            --set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=$ALB_CONTROLLER_ROLE_ARN \
+            --wait --timeout 10m
 
       - name: Deploy to EKS with Helm
         continue-on-error: true
         run: |
           helm package helm/fastapi-app
           mv fastapi-app-*.tgz fastapi-app.tgz
-          helm upgrade --install fastapi-app ./fastapi-app.tgz --namespace default --set image.tag=latest --timeout 10m
+          helm upgrade --install fastapi-app ./fastapi-app.tgz --namespace default --set image.tag=latest --timeout 15m
 
       - name: Debug Ingress and ALB
         continue-on-error: true
@@ -246,17 +248,17 @@ jobs:
         id: alb_url
         continue-on-error: true
         run: |
-          for i in {1..10}; do
+          for i in {1..15}; do
             ALB_URL=$(kubectl get ingress -n default -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}' --request-timeout=60s || true)
             if [ -n "$ALB_URL" ]; then
               echo "ALB_URL=$ALB_URL" >> $GITHUB_ENV
               echo "ALB URL: $ALB_URL"
               exit 0
             fi
-            echo "Retrying ALB URL retrieval ($i/10)..."
+            echo "Retrying ALB URL retrieval ($i/15)..."
             sleep 30
           done
-          echo "Failed to retrieve ALB URL after 10 attempts"
+          echo "Failed to retrieve ALB URL after 15 attempts"
           exit 1
 
       - name: Output ALB URL
