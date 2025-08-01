@@ -20,10 +20,10 @@ terraform {
     }
   }
   backend "s3" {
-    bucket         = "terraform-state-${random_string.s3_prefix.result}-${var.region}-${var.account_id}"
+    bucket         = "terraform-state-placeholder" # Placeholder, will be overridden by CLI
     key            = "terraform.tfstate"
-    region         = var.region
-    dynamodb_table = "terraform-locks-${random_string.s3_prefix.result}-${var.region}-${var.account_id}"
+    region         = "ap-south-1" # Default, will be overridden by CLI
+    dynamodb_table = "terraform-locks-placeholder" # Placeholder, will be overridden by CLI
     encrypt        = true
   }
 }

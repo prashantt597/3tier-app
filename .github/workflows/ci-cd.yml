@@ -169,10 +169,7 @@ jobs:
       - name: Terraform Init with S3 Backend
         run: |
           cd infra
-          terraform init -backend-config="bucket=terraform-state-${{ steps.get_prefix.outputs.prefix }}-${{ secrets.AWS_ACCOUNT_ID }}" \
-                         -backend-config="key=terraform.tfstate" \
-                         -backend-config="region=ap-south-1" \
-                         -backend-config="dynamodb_table=terraform-locks-${{ steps.get_prefix.outputs.prefix }}-${{ secrets.AWS_ACCOUNT_ID }}"
+          terraform init -reconfigure -backend-config="bucket=terraform-state-${{ steps.get_prefix.outputs.prefix }}-${{ secrets.AWS_ACCOUNT_ID }}" -backend-config="key=terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="dynamodb_table=terraform-locks-${{ steps.get_prefix.outputs.prefix }}-${{ secrets.AWS_ACCOUNT_ID }}"
         id: init_with_backend
       - name: Get Random Prefix
         id: get_prefix
@@ -185,6 +182,11 @@ jobs:
           echo "Capturing prefix output..."
           (terraform show -json | jq -r '.values.outputs.s3_prefix.value' > prefix.txt) 2>/dev/null || echo "Output not found" > prefix.txt
           PREFIX=$(cat prefix.txt)
+          if [ -z "$PREFIX" ]; then
+            echo "Prefix not found, generating new one"
+            terraform apply -target=random_string.s3_prefix -auto-approve -var="region=ap-south-1" -var="account_id=${{ secrets.AWS_ACCOUNT_ID }}" -var="image_repository=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/3tier-app" -var="image_tag=latest" -var="deployment_id=${{ github.run_id }}"
+            PREFIX=$(terraform output -raw s3_prefix)
+          fi
           echo "prefix=$PREFIX" >> $GITHUB_OUTPUT
           echo "Generated prefix: $PREFIX"
           rm -f prefix.txt
@@ -248,15 +250,19 @@ jobs:
           fi
           # Validate and fix bucket name for terraform destroy
           PREFIX="${{ steps.get_prefix.outputs.prefix }}"
-          BUCKET="terraform-state-${PREFIX}-${{ secrets.AWS_ACCOUNT_ID }}"
-          if aws s3 ls s3://$BUCKET --region ap-south-1 2>&1 | grep -q "NoSuchBucket"; then
-            echo "Bucket $BUCKET not found, initializing new state"
-            terraform init -force-copy -backend-config="bucket=$BUCKET" -backend-config="key=terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="dynamodb_table=terraform-locks-${PREFIX}-${{ secrets.AWS_ACCOUNT_ID }}" || echo "Terraform init failed, proceeding with manual cleanup"
+          if [ -z "$PREFIX" ]; then
+            echo "Prefix not available, skipping Terraform destroy"
           else
-            echo "Validating Terraform state backend with bucket: $BUCKET"
-            terraform init -backend-config="bucket=$BUCKET" -backend-config="key=terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="dynamodb_table=terraform-locks-${PREFIX}-${{ secrets.AWS_ACCOUNT_ID }}" || echo "Terraform init failed, proceeding with manual cleanup"
+            BUCKET="terraform-state-${PREFIX}-${{ secrets.AWS_ACCOUNT_ID }}"
+            if aws s3 ls s3://$BUCKET --region ap-south-1 2>&1 | grep -q "NoSuchBucket"; then
+              echo "Bucket $BUCKET not found, initializing new state"
+              terraform init -force-copy -backend-config="bucket=$BUCKET" -backend-config="key=terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="dynamodb_table=terraform-locks-${PREFIX}-${{ secrets.AWS_ACCOUNT_ID }}" || echo "Terraform init failed, proceeding with manual cleanup"
+            else
+              echo "Validating Terraform state backend with bucket: $BUCKET"
+              terraform init -backend-config="bucket=$BUCKET" -backend-config="key=terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="dynamodb_table=terraform-locks-${PREFIX}-${{ secrets.AWS_ACCOUNT_ID }}" || echo "Terraform init failed, proceeding with manual cleanup"
+            fi
+            terraform destroy -auto-approve -var="region=ap-south-1" -var="account_id=${{ secrets.AWS_ACCOUNT_ID }}" -var="image_repository=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/3tier-app" -var="image_tag=${{ github.sha }}" -var="deployment_id=$DEPLOYMENT_ID" || echo "Terraform destroy failed, attempting manual cleanup"
           fi
-          terraform destroy -auto-approve -var="region=ap-south-1" -var="account_id=${{ secrets.AWS_ACCOUNT_ID }}" -var="image_repository=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/3tier-app" -var="image_tag=${{ github.sha }}" -var="deployment_id=$DEPLOYMENT_ID" || echo "Terraform destroy failed, attempting manual cleanup"
           # Manual cleanup fallback
           terraform state list | grep -E 'aws_vpc|aws_s3_bucket' | while read -r resource; do
             terraform state rm $resource || echo "Failed to remove $resource from state"
