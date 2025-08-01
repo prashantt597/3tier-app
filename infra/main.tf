@@ -19,14 +19,6 @@ terraform {
       version = "~> 3.6.0"
     }
   }
-
-  backend "s3" {
-    bucket         = "terraform-state-${random_string.s3_prefix.result}-${var.region}-${var.account_id}"
-    key            = "terraform.tfstate"
-    region         = var.region
-    dynamodb_table = "terraform-locks-${random_string.s3_prefix.result}-${var.region}-${var.account_id}"
-    encrypt        = true
-  }
 }
 
 # AWS provider with parameterized region
@@ -208,7 +200,7 @@ resource "aws_iam_role" "aws_load_balancer_controller" {
         Action = "sts:AssumeRoleWithWebIdentity"
         Condition = {
           StringEquals = {
-            "${module.eks.oidc_provider}:sub" = "system:serviceaccount:kube-system:aws-load-balancer-controller"
+            "${module.eks.oidc_provider}:sub" = "system:serviceaccount:kue-system:aws-load-balancer-controller"
           }
         }
       }
