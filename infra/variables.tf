@@ -31,11 +31,9 @@ variable "account_id" {
 variable "image_repository" {
   description = "Docker image repository"
   type        = string
-  default     = "docker.io/${{ secrets.DOCKERHUB_USERNAME }}/3tier-app"
 }
 
 variable "image_tag" {
   description = "Docker image tag"
   type        = string
-  default     = "latest"
 }
