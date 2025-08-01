@@ -55,7 +55,7 @@ resource "random_string" "s3_prefix" {
   length  = 8
   special = false
   upper   = false
-  number  = true
+  numeric = true
 }
 
 # Data source for EKS-optimized AMI
@@ -223,13 +223,17 @@ resource "aws_iam_role_policy_attachment" "aws_load_balancer_controller_attach" 
 # Add S3 bucket and DynamoDB for Terraform state with unique prefix
 resource "aws_s3_bucket" "terraform_state" {
   bucket = "terraform-state-${random_string.s3_prefix.result}-${var.region}-${var.account_id}"
-  versioning {
-    enabled = true
-  }
   tags = {
     Environment = "Production"
     Project     = "3tier-app"
     ManagedBy   = "Terraform"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "terraform_state" {
+  bucket = aws_s3_bucket.terraform_state.id
+  versioning_configuration {
+    status = "Enabled"
   }
 }
 
@@ -249,6 +253,23 @@ resource "aws_dynamodb_table" "terraform_locks" {
     name = "LockID"
     type = "S"
   }
+  tags = {
+    Environment = "Production"
+    Project     = "3tier-app"
+    ManagedBy   = "Terraform"
+  }
+}
+
+# Basic ALB resource (to be adjusted based on requirements)
+resource "aws_lb" "alb" {
+  name               = "${var.cluster_name}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [module.eks.cluster_security_group_id]
+  subnets            = module.vpc.public_subnets
+
+  enable_deletion_protection = false
+
   tags = {
     Environment = "Production"
     Project     = "3tier-app"
