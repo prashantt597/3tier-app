@@ -183,7 +183,7 @@ jobs:
           echo "Refreshing Terraform state..."
           terraform refresh -var="region=ap-south-1" -var="account_id=${{ secrets.AWS_ACCOUNT_ID }}" -var="image_repository=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/3tier-app" -var="image_tag=latest" || echo "Refresh failed"
           echo "Capturing prefix output..."
-          terraform output -raw s3_prefix > prefix.txt 2>/dev/null || echo "Output not found" > prefix.txt
+          (terraform show -json | jq -r '.values.outputs.s3_prefix.value' > prefix.txt) 2>/dev/null || echo "Output not found" > prefix.txt
           PREFIX=$(cat prefix.txt)
           echo "prefix=$PREFIX" >> $GITHUB_OUTPUT
           echo "Generated prefix: $PREFIX"
