@@ -14,13 +14,17 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "~> 2.27.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6.0"
+    }
   }
 
   backend "s3" {
-    bucket         = "terraform-state-${var.region}-${var.account_id}"
+    bucket         = "terraform-state-${random_string.s3_prefix.result}-${var.region}-${var.account_id}"
     key            = "terraform.tfstate"
     region         = var.region
-    dynamodb_table = "terraform-locks-${var.region}-${var.account_id}"
+    dynamodb_table = "terraform-locks-${random_string.s3_prefix.result}-${var.region}-${var.account_id}"
     encrypt        = true
   }
 }
@@ -52,6 +56,14 @@ provider "kubernetes" {
     command     = "aws"
     args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.region]
   }
+}
+
+# Random string for unique prefix
+resource "random_string" "s3_prefix" {
+  length  = 8
+  special = false
+  upper   = false
+  number  = true
 }
 
 # Data source for EKS-optimized AMI
@@ -216,9 +228,9 @@ resource "aws_iam_role_policy_attachment" "aws_load_balancer_controller_attach" 
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSLoadBalancerControllerRole"
 }
 
-# Add S3 bucket and DynamoDB for Terraform state
+# Add S3 bucket and DynamoDB for Terraform state with unique prefix
 resource "aws_s3_bucket" "terraform_state" {
-  bucket = "terraform-state-${var.region}-${var.account_id}"
+  bucket = "terraform-state-${random_string.s3_prefix.result}-${var.region}-${var.account_id}"
   versioning {
     enabled = true
   }
@@ -238,7 +250,7 @@ resource "aws_s3_bucket_public_access_block" "terraform_state" {
 }
 
 resource "aws_dynamodb_table" "terraform_locks" {
-  name           = "terraform-locks-${var.region}-${var.account_id}"
+  name           = "terraform-locks-${random_string.s3_prefix.result}-${var.region}-${var.account_id}"
   billing_mode   = "PAY_PER_REQUEST"
   hash_key       = "LockID"
   attribute {
