@@ -14,7 +14,12 @@ output "aws_load_balancer_controller_role_arn" {
   value = aws_iam_role.aws_load_balancer_controller.arn
 }
 
-# Temporarily comment out or remove if ALB is not fully configured yet
+# Temporarily comment out if ALB is not fully configured yet
 # output "alb_dns" {
 #   value = aws_lb.alb.dns_name
 # }
+
+# Add s3_prefix output
+output "s3_prefix" {
+  value = random_string.s3_prefix.result
+}
