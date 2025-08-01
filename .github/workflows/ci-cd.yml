@@ -180,6 +180,24 @@ jobs:
           echo "prefix=$PREFIX" >> $GITHUB_OUTPUT
           echo "Generated prefix: $PREFIX"
           rm -f prefix.txt
+      - name: Wait for S3 Bucket Propagation
+        run: |
+          cd infra
+          PREFIX="${{ steps.get_prefix.outputs.prefix }}"
+          BUCKET="terraform-state-${PREFIX}-${{ secrets.AWS_ACCOUNT_ID }}"
+          for i in {1..10}; do
+            if aws s3 ls s3://$BUCKET --region ap-south-1 2>&1 | grep -q "NoSuchBucket"; then
+              echo "Waiting for bucket $BUCKET to propagate ($i/10)..."
+              sleep 6
+            else
+              echo "Bucket $BUCKET is available"
+              break
+            fi
+          done
+          if [ $i -eq 10 ]; then
+            echo "Error: Bucket $BUCKET not available after 60 seconds"
+            exit 1
+          fi
       - name: Terraform Init with S3 Backend
         run: |
           cd infra
